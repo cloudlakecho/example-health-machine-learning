@@ -29,10 +29,9 @@ This project is part of a series of code patterns pertaining to a fictional heal
 This company stores electronic health records in a database on a z/OS server.
 Before running the notebook, the synthesized health records must be created and loaded into this database.
 Another project, https://github.com/IBM/example-health-synthea, provides the steps for doing this.
-The records are created using a tool called [Synthea](https://github.com/synthetichealth/synthea), transformed and loaded into the database.
-
-&nbsp;&nbsp;&nbsp;&nbsp;[Sqlite specific version download](https://www.sqlite.org/src/timeline?t=release)
-&nbsp;&nbsp;&nbsp;&nbsp;[Sqlite installation from TAR or ZIP file](https://www.w3resource.com/sqlite/sqlite-download-installation-getting-started.php)
+The records are created using a tool called [Synthea](https://github.com/synthetichealth/synthea), transformed and loaded into the database.  
+&nbsp;&nbsp;&nbsp;&nbsp;[Sqlite specific version download](https://www.sqlite.org/src/timeline?t=release)  
+&nbsp;&nbsp;&nbsp;&nbsp;[Sqlite installation from TAR or ZIP file](https://www.w3resource.com/sqlite/sqlite-download-installation-getting-started.php)  
 
 If required, set up the [Secure Gateway service](https://console.bluemix.net/docs/services/SecureGateway/index.html#getting-started-with-sg)
 to provide you with a secure way to access your on-premise data source.
