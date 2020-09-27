@@ -31,6 +31,9 @@ Before running the notebook, the synthesized health records must be created and 
 Another project, https://github.com/IBM/example-health-synthea, provides the steps for doing this.
 The records are created using a tool called [Synthea](https://github.com/synthetichealth/synthea), transformed and loaded into the database.
 
+&nbsp;&nbsp;&nbsp;&nbsp;[Sqlite specific version download](https://www.sqlite.org/src/timeline?t=release)
+&nbsp;&nbsp;&nbsp;&nbsp;[Sqlite installation from TAR or ZIP file](https://www.w3resource.com/sqlite/sqlite-download-installation-getting-started.php)
+
 If required, set up the [Secure Gateway service](https://console.bluemix.net/docs/services/SecureGateway/index.html#getting-started-with-sg)
 to provide you with a secure way to access your on-premise data source.
 
@@ -38,20 +41,20 @@ to provide you with a secure way to access your on-premise data source.
 
 ## Sign up for Watson Studio
 
-Sign up for [IBM Watson Studio](https://dataplatform.ibm.com). 
+Sign up for [IBM Watson Studio](https://dataplatform.ibm.com).
 
 ## Create a project
 
 * Click the **Create a project** tile.
 * A list of project types appears.  Click the **Data Science** project type.
 * Provide a name for the project (e.g. "diabetes-prediction") and click the **Create** button.
-* The project is saved in a lite object storage instance in your account. 
+* The project is saved in a lite object storage instance in your account.
 
 ## Create a Watson Machine Learning instance
 
 * Click on the **Settings** tab of your project.
 * Scroll down to **Associated Services**.
-* Click **Add service** and select **Watson** from the drop-down menu. 
+* Click **Add service** and select **Watson** from the drop-down menu.
 * Click **Add** on the **Machine Learning** tile.
 * Select the lite plan and click the **Create** button.
 
@@ -70,7 +73,7 @@ Sign up for [IBM Watson Studio](https://dataplatform.ibm.com).
 * Click on **Cell** in the menu bar and select **All Output** > **Clear** to clear out the existing notebook output.
 
 * Move your cursor to each code cell and run the code in it.  Read the comments for each cell to understand what the code is doing.
-When the code in a cell is still running, the label to the left changes to In [*]:. 
+When the code in a cell is still running, the label to the left changes to In [*]:.
 Do not continue to the next cell until the code is finished running.
 
 * There are a couple of cells which you have to update to provide your credentials.
