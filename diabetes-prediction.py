@@ -13,6 +13,17 @@
 #
 # This project is part of a series of code patterns pertaining to a fictional health care company called Example Health.  This company stores electronic health records in a database on a z/OS server.  Before running the notebook, the synthesized health records must be created and loaded into this database.  Another project, https://github.com/IBM/example-health-synthea, provides the steps for doing this.  The records are created using a tool called Synthea (https://github.com/synthetichealth/synthea), transformed and loaded into the database.
 
+import os, pdb, sys
+import math, statistics
+import numpy as np
+import pandas as pd
+
+
+z_OS_server = False  # Database from z/OS server.
+NOTEBOOK = False
+
+DEBUGGING = True
+
 # ## Load and prepare the data
 
 # ### Set up the information needed for a JDBC connection to your database below
@@ -56,154 +67,177 @@ def load_data_from_database(table_name):
     )
 
 
-# ### Read patient observations from the database
-#
-# The observations include things like blood pressure and cholesterol readings which are potential features for our model.
 
-# In[3]:
+# ### Read patient observations from the database
+if (z_OS_server):
+    #
+    # The observations include things like blood pressure and cholesterol readings which are potential features for our model.
+
+    # In[3]:
+
+
+    observations_df = load_data_from_database("OBSERVATIONS")
+
+    observations_df.show(5)
+
+
+    # ### The observations table has a generalized format with a separate row per observation
+    #
+    # Let's collect the observations that may be of interest in making a diabetes prediction.
+    # First, select systolic blood pressure readings from the observations.  These have code 8480-6.
+
+    # In[ ]:
+
+
+    from pyspark.sql.functions import col
+
+    systolic_observations_df = (
+        observations_df.select("patientid", "dateofobservation", "numericvalue")
+                       .withColumnRenamed("numericvalue", "systolic")
+                       .filter((col("code") == "8480-6"))
+      )
+
+
+    systolic_observations_df.show(5)
+
+
+    # ### Select other observations of potential interest
+    #
+    # * Select diastolic blood pressure readings (code 8462-4).
+    # * Select HDL cholesterol readings (code 2085-9).
+    # * Select LDL cholesterol readings (code 18262-6).
+    # * Select BMI (body mass index) readings (code 39156-5).
+
+    # In[ ]:
+
+
+    diastolic_observations_df = (
+        observations_df.select("patientid", "dateofobservation", "numericvalue")
+                       .withColumnRenamed('numericvalue', 'diastolic')
+                       .filter((col("code") == "8462-4"))
+        )
+
+    hdl_observations_df = (
+        observations_df.select("patientid", "dateofobservation", "numericvalue")
+                       .withColumnRenamed('numericvalue', 'hdl')
+                       .filter((col("code") == "2085-9"))
+        )
+
+    ldl_observations_df = (
+        observations_df.select("patientid", "dateofobservation", "numericvalue")
+                       .withColumnRenamed('numericvalue', 'ldl')
+                       .filter((col("code") == "18262-6"))
+        )
+
+    bmi_observations_df = (
+        observations_df.select("patientid", "dateofobservation", "numericvalue")
+                       .withColumnRenamed('numericvalue', 'bmi')
+                       .filter((col("code") == "39156-5"))
+        )
+
+
+    # ### Join the observations for each patient by date into one dataframe
+
+    # In[ ]:
+
+
+    merged_observations_df = (
+        systolic_observations_df.join(diastolic_observations_df, ["patientid", "dateofobservation"])
+                                .join(hdl_observations_df, ["patientid", "dateofobservation"])
+                                .join(ldl_observations_df, ["patientid", "dateofobservation"])
+                                .join(bmi_observations_df, ["patientid", "dateofobservation"])
+    )
+
+    merged_observations_df.show(5)
+
+
+    # ### Another possible feature is the patient's age at the time of observation
+    #
+    # Load the patients' birth dates from the database into a dataframe.
+
+    # In[ ]:
+
+
+    patients_df = load_data_from_database("PATIENT").select("patientid", "dateofbirth")
+
+    patients_df.show(5)
+
+
+    # Add a column containing the patient's age to the merged observations.
+
+    # In[ ]:
+
+
+    from pyspark.sql.functions import datediff
+
+    merged_observations_with_age_df = (
+      merged_observations_df.join(patients_df, "patientid")
+                            .withColumn("age", datediff(col("dateofobservation"), col("dateofbirth"))/365)
+                            .drop("dateofbirth")
+      )
+
+    merged_observations_with_age_df.show(5)
+
+
+    # ### Find the patients that have been diagnosed with type 2 diabetes
+    #
+    # The conditions table contains the conditions that patients have and the date they were diagnosed.
+    # Load the patient conditions table and select the patients that have been diagnosed with type 2 diabetes.
+    # Keep the date they were diagnosed ("start" column).
+
+    # In[ ]:
+
+
+    diabetics_df = (
+        load_data_from_database("CONDITIONS")
+        .select("patientid", "start")
+        .filter(col("description") == "Diabetes")
+    )
+
+    diabetics_df.show(5)
+
+
+    # ### Create a "diabetic" column which is the "label" for the model to predict
+    #
+    # Join the merged observations with the diabetic patients.
+    # This is a left join so that we keep all observations for both diabetic and non-diabetic patients.
+    # Create a new column with a binary value, 1=diabetic, 0=non-diabetic.
+    # This will be the label for the model (the value it is trying to predict).
+
+    # In[ ]:
+
+
+    from pyspark.sql.functions import when
+
+    observations_and_condition_df = (
+        merged_observations_with_age_df.join(diabetics_df, "patientid", "left_outer")
+        .withColumn("diabetic", when(col("start").isNotNull(), 1).otherwise(0))
+    )
 
 # To do
 #   Build DataFrame with
-observations_df = load_data_from_database("OBSERVATIONS")
+#   patientid|d"ateofobservation|systolic|diastolic|  hdl|  ldl|  bmi| age|start|diabetic
+temp = ["dateofobservation", "systolic", "diastolic", "hdl", "ldl", "bmi",
+    "age", "start", "diabetic"]
+observations_and_condition_df = pd.DataFrame(columns=temp)
+# systolic 90 ~ 120
+# diastolic 60 ~ 80
+# hdl 60 milligrams per deciliter (mg/dL) of blood or higher
+# ldl
+# Less than 100 mg/dL	Optimal
+# 100-129 mg/dL	Near optimal/above optimal
+# 130-159 mg/dL	Borderline high
+# 160-189 mg/dL	High
+# bmi
+# Below 18.5	Underweight
+# 18.5 – 24.9	Normal or Healthy Weight
+# 25.0 – 29.9	Overweight
+# 30.0 and Above	Obese
 
-observations_df.show(5)
+# observations_and_condition_df.show(5)
 
-
-# ### The observations table has a generalized format with a separate row per observation
-#
-# Let's collect the observations that may be of interest in making a diabetes prediction.
-# First, select systolic blood pressure readings from the observations.  These have code 8480-6.
-
-# In[ ]:
-
-
-from pyspark.sql.functions import col
-
-systolic_observations_df = (
-    observations_df.select("patientid", "dateofobservation", "numericvalue")
-                   .withColumnRenamed("numericvalue", "systolic")
-                   .filter((col("code") == "8480-6"))
-  )
-
-
-systolic_observations_df.show(5)
-
-
-# ### Select other observations of potential interest
-#
-# * Select diastolic blood pressure readings (code 8462-4).
-# * Select HDL cholesterol readings (code 2085-9).
-# * Select LDL cholesterol readings (code 18262-6).
-# * Select BMI (body mass index) readings (code 39156-5).
-
-# In[ ]:
-
-
-diastolic_observations_df = (
-    observations_df.select("patientid", "dateofobservation", "numericvalue")
-                   .withColumnRenamed('numericvalue', 'diastolic')
-                   .filter((col("code") == "8462-4"))
-    )
-
-hdl_observations_df = (
-    observations_df.select("patientid", "dateofobservation", "numericvalue")
-                   .withColumnRenamed('numericvalue', 'hdl')
-                   .filter((col("code") == "2085-9"))
-    )
-
-ldl_observations_df = (
-    observations_df.select("patientid", "dateofobservation", "numericvalue")
-                   .withColumnRenamed('numericvalue', 'ldl')
-                   .filter((col("code") == "18262-6"))
-    )
-
-bmi_observations_df = (
-    observations_df.select("patientid", "dateofobservation", "numericvalue")
-                   .withColumnRenamed('numericvalue', 'bmi')
-                   .filter((col("code") == "39156-5"))
-    )
-
-
-# ### Join the observations for each patient by date into one dataframe
-
-# In[ ]:
-
-
-merged_observations_df = (
-    systolic_observations_df.join(diastolic_observations_df, ["patientid", "dateofobservation"])
-                            .join(hdl_observations_df, ["patientid", "dateofobservation"])
-                            .join(ldl_observations_df, ["patientid", "dateofobservation"])
-                            .join(bmi_observations_df, ["patientid", "dateofobservation"])
-)
-
-merged_observations_df.show(5)
-
-
-# ### Another possible feature is the patient's age at the time of observation
-#
-# Load the patients' birth dates from the database into a dataframe.
-
-# In[ ]:
-
-
-patients_df = load_data_from_database("PATIENT").select("patientid", "dateofbirth")
-
-patients_df.show(5)
-
-
-# Add a column containing the patient's age to the merged observations.
-
-# In[ ]:
-
-
-from pyspark.sql.functions import datediff
-
-merged_observations_with_age_df = (
-  merged_observations_df.join(patients_df, "patientid")
-                        .withColumn("age", datediff(col("dateofobservation"), col("dateofbirth"))/365)
-                        .drop("dateofbirth")
-  )
-
-merged_observations_with_age_df.show(5)
-
-
-# ### Find the patients that have been diagnosed with type 2 diabetes
-#
-# The conditions table contains the conditions that patients have and the date they were diagnosed.
-# Load the patient conditions table and select the patients that have been diagnosed with type 2 diabetes.
-# Keep the date they were diagnosed ("start" column).
-
-# In[ ]:
-
-
-diabetics_df = (
-    load_data_from_database("CONDITIONS")
-    .select("patientid", "start")
-    .filter(col("description") == "Diabetes")
-)
-
-diabetics_df.show(5)
-
-
-# ### Create a "diabetic" column which is the "label" for the model to predict
-#
-# Join the merged observations with the diabetic patients.
-# This is a left join so that we keep all observations for both diabetic and non-diabetic patients.
-# Create a new column with a binary value, 1=diabetic, 0=non-diabetic.
-# This will be the label for the model (the value it is trying to predict).
-
-# In[ ]:
-
-
-from pyspark.sql.functions import when
-
-observations_and_condition_df = (
-    merged_observations_with_age_df.join(diabetics_df, "patientid", "left_outer")
-    .withColumn("diabetic", when(col("start").isNotNull(), 1).otherwise(0))
-)
-
-observations_and_condition_df.show(5)
-
+if (DEBUGGING):
+    pdb.set_trace()
 
 # ### Filter the observations for diabetics to remove those taken before diagnosis
 #
