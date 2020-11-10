@@ -214,6 +214,7 @@ if (z_OS_server):
         .withColumn("diabetic", when(col("start").isNotNull(), 1).otherwise(0))
     )
 
+upperBound = 5000
 # To do
 #   Build DataFrame with
 #   patientid|d"ateofobservation|systolic|diastolic|  hdl|  ldl|  bmi| age|start|diabetic
@@ -233,6 +234,12 @@ observations_and_condition_df = pd.DataFrame(columns=temp)
 # 18.5 – 24.9	Normal or Healthy Weight
 # 25.0 – 29.9	Overweight
 # 30.0 and Above	Obese
+mean = (90 + 120) / 2
+observations_and_condition_df['systolic'] = np.random.normal(
+    mean, 0.33, size=upperBound).astype(np.int)
+mean = (60 + 80) / 2
+observations_and_condition_df['diastolic'] = np.random.normal(
+    mean, 0.33, size=upperBound).astype(np.int)
 
 # observations_and_condition_df.show(5)
 
