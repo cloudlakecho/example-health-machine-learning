@@ -6,18 +6,23 @@
 # This notebook explores how to train a machine learning model to predict type 2 diabetes using synthesized patient health records.  The use of synthesized data allows us to learn about building a model without any concern about the privacy issues surrounding the use of real patient health records.
 #
 # To do
+#   Abandon
 #   Modify load_data_from_database function
 #       Original method not used due to hardware limit
+
+# Error
 
 # ## Prerequisites
 #
 # This project is part of a series of code patterns pertaining to a fictional health care company called Example Health.  This company stores electronic health records in a database on a z/OS server.  Before running the notebook, the synthesized health records must be created and loaded into this database.  Another project, https://github.com/IBM/example-health-synthea, provides the steps for doing this.  The records are created using a tool called Synthea (https://github.com/synthetichealth/synthea), transformed and loaded into the database.
 
-import os, pdb, sys
+import datetime, os, pdb, sys
 import math, statistics
 import numpy as np
 import pandas as pd
-
+from pyspark.sql.functions import col
+from pyspark.sql.window import Window
+from pyspark.sql.functions import row_number
 
 z_OS_server = False  # Database from z/OS server.
 NOTEBOOK = False
@@ -214,16 +219,37 @@ if (z_OS_server):
         .withColumn("diabetic", when(col("start").isNotNull(), 1).otherwise(0))
     )
 
-upperBound = 5000
+# Number of patients, and there would be multiple observation per patient
+total_patient = 5000
+no_observation = 4
+upperBound =  total_patient * no_observation
+
 # To do
 #   Build DataFrame with
 #   patientid|d"ateofobservation|systolic|diastolic|  hdl|  ldl|  bmi| age|start|diabetic
-temp = ["dateofobservation", "systolic", "diastolic", "hdl", "ldl", "bmi",
+# ex)
+# +---------+-----------------+--------+---------+-----+-----+-----+-----------------+-----+--------+
+# |patientid|dateofobservation|systolic|diastolic|  hdl|  ldl|  bmi|              age|start|diabetic|
+# +---------+-----------------+--------+---------+-----+-----+-----+-----------------+-----+--------+
+# |      463|       2013-01-26|  113.40|    77.50|77.30|91.40|35.80|52.52876712328767| null|       0|
+# |      463|       2010-01-09|  113.50|    70.60|71.20|76.00|35.80|49.47945205479452| null|       0|
+
+temp = ["patientid", "dateofobservation", "systolic", "diastolic", "hdl", "ldl", "bmi",
     "age", "start", "diabetic"]
 observations_and_condition_df = pd.DataFrame(columns=temp)
+
+id_start = 1
+id_end = id_start + total_patient
+observations_and_condition_df["patientid"] = \
+    np.random.uniform(low=id_start, high=id_end,
+    size=upperBound).astype(np.int)
 # systolic 90 ~ 120
 # diastolic 60 ~ 80
+
+# To do
+# Beta distribution, but what value would be upper limit?
 # hdl 60 milligrams per deciliter (mg/dL) of blood or higher
+
 # ldl
 # Less than 100 mg/dL	Optimal
 # 100-129 mg/dL	Near optimal/above optimal
@@ -238,9 +264,47 @@ mean = (90 + 120) / 2
 observations_and_condition_df['systolic'] = np.random.normal(
     mean, 0.33, size=upperBound).astype(np.int)
 mean = (60 + 80) / 2
+
 observations_and_condition_df['diastolic'] = np.random.normal(
+mean, 0.33, size=upperBound).astype(np.int)
+
+limit = 100
+observations_and_condition_df['ldl'] = np.random.poisson(
+    limit, upperBound)
+mean = (18.5 + 24.9) / 2
+observations_and_condition_df['bmi'] = np.random.normal(
     mean, 0.33, size=upperBound).astype(np.int)
 
+# Age: Share on Pinterest The average age of onset for
+# type 2 diabetes is 45 years
+data_of_birth_early = "1958-11-29"
+data_of_birth_late = "2017-07-04"
+mean = 45
+observations_and_condition_df['age'] = np.random.normal(
+    mean, 0.33, size=upperBound).astype(np.int)
+
+# Start: Age at the time of diagnosis
+# In 2015, adults aged 45 to 64 were the most diagnosed age group for diabetes
+start_early = datetime.datetime(1994, 12, 28)
+start_late = datetime.datetime(2012, 7, 20)
+observations_and_condition_df["start"] = \
+    [i.strftime("%Y-%m-%d") for i in
+    start_early + (start_late - start_early) * \
+    np.random.uniform(low=0, high=1, size=upperBound)]
+
+
+# Date of observation
+observation_early = datetime.datetime(2009, 5, 16)
+observation_late = datetime.datetime(2019, 3, 2)
+observations_and_condition_df["dateofobservation"] = \
+    [i.strftime("%Y-%m-%d") for i in
+    observation_early + (observation_late - observation_early) * \
+    np.random.uniform(low=0, high=1, size=upperBound)]
+
+# 0: no and 1: diabetic
+observations_and_condition_df["diabetic"] = \
+    [round(i) for i in np.random.uniform(low=0, high=1,
+    size=upperBound)]
 # observations_and_condition_df.show(5)
 
 if (DEBUGGING):
@@ -248,27 +312,49 @@ if (DEBUGGING):
 
 # ### Filter the observations for diabetics to remove those taken before diagnosis
 #
-# This is driven by the way that the diabetes simulation works in Synthea.  The impact of the condition (diabetes) is not reflected in the observations until the patient is diagnosed with the condition in a wellness visit.  Prior to that the patient's observations won't be any different from a non-diabetic patient.  Therefore we want only the observations at the time the patients were diabetic.
+# This is driven by the way that the diabetes simulation works in Synthea.
+# The impact of the condition (diabetes) is not reflected
+# in the observations until the patient is diagnosed
+# with the condition in a wellness visit.
+# Prior to that the patient's observations
+# won't be any different from a non-diabetic patient.
+# Therefore we want only the observations at the time the patients were diabetic.
 
 # In[ ]:
 
+# 1st trial
+# This generate only index
+
+# Error spot
+test_df = observations_and_condition_df.filter(
+    observations_and_condition_df["diabetic"] == 0)
 
 observations_and_condition_df = (
-    observations_and_condition_df.filter((col("diabetic") == 0) | ((col("dateofobservation") >= col("start"))))
+    observations_and_condition_df.filter(
+        (observations_and_condition_df["diabetic"] == 0) |
+        ((observations_and_condition_df["dateofobservation"] >=
+        observations_and_condition_df["start"])))
 )
 
+# 2nd trial - original code
+# observations_and_condition_df = (
+#     observations_and_condition_df.filter(
+#     (col("diabetic") == 0) |
+#     ((col("dateofobservation") >= col("start"))))
+# )
 
-# ### Reduce the observations to a single observation per patient (the earliest available observation)
+# ### Reduce the observations to a single observation per
+# patient (the earliest available observation)
 
 # In[ ]:
 
 
-from pyspark.sql.window import Window
-from pyspark.sql.functions import row_number
 
-w = Window.partitionBy(observations_and_condition_df["patientid"]).orderBy(merged_observations_df["dateofobservation"].asc())
+w = Window.partitionBy(observations_and_condition_df["patientid"]).orderBy(
+    merged_observations_df["dateofobservation"].asc())
 
-first_observation_df = observations_and_condition_df.withColumn("rn", row_number().over(w)).where(col("rn") == 1).drop("rn")
+first_observation_df = observations_and_condition_df.withColumn(
+    "rn", row_number().over(w)).where(col("rn") == 1).drop("rn")
 
 
 # ## Visualize data
@@ -298,10 +384,10 @@ first_observation_df = observations_and_condition_df.withColumn("rn", row_number
 
 # In[ ]:
 
+if (NOTEBOOK):
+    import pixiedust
 
-import pixiedust
-
-display(first_observation_df)
+    display(first_observation_df)
 
 
 # ## Build and train the model
@@ -372,8 +458,9 @@ model = pipeline.fit(train_data)
 
 # Plot the model's precision/recall curve.
 
-get_ipython().run_line_magic('matplotlib', 'inline')
-import matplotlib.pyplot as plt
+if (NOTEBOOK):
+    get_ipython().run_line_magic('matplotlib', 'inline')
+
 
 trainingSummary = model.stages[-1].summary
 
@@ -410,74 +497,74 @@ print("False negatives = %s" % fn)
 print("Recall = %s" % (tp / (tp + fn)))
 print("Precision = %s" % (tp / (tp + fp)))
 
+if (DEPLOY):
+    # ## Publish and deploy the model
+    #
+    # In this section you will learn how to store the model in the Watson Machine Learning repository by using the repository client.
+    #
+    # First install the client library.
 
-# ## Publish and deploy the model
-#
-# In this section you will learn how to store the model in the Watson Machine Learning repository by using the repository client.
-#
-# First install the client library.
-
-# In[ ]:
-
-
-get_ipython().system('rm -rf $PIP_BUILD/watson-machine-learning-client')
-get_ipython().system('pip install watson-machine-learning-client --upgrade')
+    # In[ ]:
 
 
-# ### Enter your Watson Machine Learning service instance credentials here
-# They can be found in the Service Credentials tab of the Watson Machine Learning service instance that you created on IBM Cloud.
-
-# In[ ]:
+    get_ipython().system('rm -rf $PIP_BUILD/watson-machine-learning-client')
+    get_ipython().system('pip install watson-machine-learning-client --upgrade')
 
 
-wml_credentials={
-  "url": "https://xxx.ibm.com",
-  "username": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-  "password": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-  "instance_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-}
+    # ### Enter your Watson Machine Learning service instance credentials here
+    # They can be found in the Service Credentials tab of the Watson Machine Learning service instance that you created on IBM Cloud.
+
+    # In[ ]:
 
 
-# ### Publish the model to the repository using the client
-
-# In[ ]:
-
-
-from watson_machine_learning_client import WatsonMachineLearningAPIClient
-
-client = WatsonMachineLearningAPIClient(wml_credentials)
-
-model_props = {
-    client.repository.ModelMetaNames.NAME: "diabetes-prediction-1",
-}
-
-stored_model_details = client.repository.store_model(model, meta_props=model_props, training_data=train_data, pipeline=pipeline)
-
-model_uid            = client.repository.get_model_uid( stored_model_details )
-print( "model_uid: ", model_uid )
+    wml_credentials={
+      "url": "https://xxx.ibm.com",
+      "username": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "password": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "instance_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    }
 
 
-# ### Deploy the model as a web service
+    # ### Publish the model to the repository using the client
 
-# In[ ]:
-
-
-deployment_details = client.deployments.create(model_uid, 'diabetes-prediction-1 deployment')
-
-scoring_endpoint = client.deployments.get_scoring_url(deployment_details)
-print(scoring_endpoint)
+    # In[ ]:
 
 
-# ### Call the web service to make a prediction from some sample data
+    from watson_machine_learning_client import WatsonMachineLearningAPIClient
 
-# In[ ]:
+    client = WatsonMachineLearningAPIClient(wml_credentials)
+
+    model_props = {
+        client.repository.ModelMetaNames.NAME: "diabetes-prediction-1",
+    }
+
+    stored_model_details = client.repository.store_model(model, meta_props=model_props, training_data=train_data, pipeline=pipeline)
+
+    model_uid            = client.repository.get_model_uid( stored_model_details )
+    print( "model_uid: ", model_uid )
 
 
-scoring_payload = {
-    "fields": ["hdl", "systolic"],
-    "values": [[45.0, 156.6]]
-}
+    # ### Deploy the model as a web service
 
-score = client.deployments.score(scoring_endpoint, scoring_payload)
+    # In[ ]:
 
-print(str(score))
+
+    deployment_details = client.deployments.create(model_uid, 'diabetes-prediction-1 deployment')
+
+    scoring_endpoint = client.deployments.get_scoring_url(deployment_details)
+    print(scoring_endpoint)
+
+
+    # ### Call the web service to make a prediction from some sample data
+
+    # In[ ]:
+
+
+    scoring_payload = {
+        "fields": ["hdl", "systolic"],
+        "values": [[45.0, 156.6]]
+    }
+
+    score = client.deployments.score(scoring_endpoint, scoring_payload)
+
+    print(str(score))
