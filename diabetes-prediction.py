@@ -154,7 +154,10 @@ if (z_OS_server):
     )
 
     merged_observations_df.show(5)
-
+    # +---------+-----------------+--------+---------+-----+------+-----+
+    # |patientid|dateofobservation|systolic|diastolic|  hdl|   ldl|  bmi|
+    # +---------+-----------------+--------+---------+-----+------+-----+
+    # |        4|       2011-12-17|  105.10|    77.10|71.00| 86.50|57.70|
 
     # ### Another possible feature is the patient's age at the time of observation
     #
@@ -307,9 +310,6 @@ observations_and_condition_df["diabetic"] = \
     size=upperBound)]
 # observations_and_condition_df.show(5)
 
-if (DEBUGGING):
-    pdb.set_trace()
-
 # ### Filter the observations for diabetics to remove those taken before diagnosis
 #
 # This is driven by the way that the diabetes simulation works in Synthea.
@@ -324,17 +324,12 @@ if (DEBUGGING):
 
 # 1st trial
 # This generate only index
-
-# Error spot
-test_df = observations_and_condition_df.filter(
-    observations_and_condition_df["diabetic"] == 0)
-
-observations_and_condition_df = (
-    observations_and_condition_df.filter(
-        (observations_and_condition_df["diabetic"] == 0) |
-        ((observations_and_condition_df["dateofobservation"] >=
-        observations_and_condition_df["start"])))
-)
+# observations_and_condition_df = (
+#     observations_and_condition_df.filter(
+#         (observations_and_condition_df["diabetic"] == 0) |
+#         ((observations_and_condition_df["dateofobservation"] >=
+#         observations_and_condition_df["start"])))
+# )
 
 # 2nd trial - original code
 # observations_and_condition_df = (
@@ -343,13 +338,25 @@ observations_and_condition_df = (
 #     ((col("dateofobservation") >= col("start"))))
 # )
 
+# 3rd trial
+oac_original = observations_and_condition_df
+
+observations_and_condition_df = \
+    observations_and_condition_df[
+    (observations_and_condition_df["diabetic"] == 0) |
+    (observations_and_condition_df["dateofobservation"] >=
+    observations_and_condition_df["start"])]
+
+if (DEBUGGING):
+    pdb.set_trace()
+
 # ### Reduce the observations to a single observation per
 # patient (the earliest available observation)
 
 # In[ ]:
 
 
-
+# Error spot
 w = Window.partitionBy(observations_and_condition_df["patientid"]).orderBy(
     merged_observations_df["dateofobservation"].asc())
 
