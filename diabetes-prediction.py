@@ -153,11 +153,11 @@ if (z_OS_server):
                                 .join(bmi_observations_df, ["patientid", "dateofobservation"])
     )
 
-    merged_observations_df.show(5)
     # +---------+-----------------+--------+---------+-----+------+-----+
     # |patientid|dateofobservation|systolic|diastolic|  hdl|   ldl|  bmi|
     # +---------+-----------------+--------+---------+-----+------+-----+
     # |        4|       2011-12-17|  105.10|    77.10|71.00| 86.50|57.70|
+    merged_observations_df.show(5)
 
     # ### Another possible feature is the patient's age at the time of observation
     #
@@ -308,6 +308,17 @@ observations_and_condition_df["dateofobservation"] = \
 observations_and_condition_df["diabetic"] = \
     [round(i) for i in np.random.uniform(low=0, high=1,
     size=upperBound)]
+
+oac_original = observations_and_condition_df
+merged_observations_df = observations_and_condition_df[[
+    'patientid', 'dateofobservation', 'systolic', 'diastolic', 'hdl',
+    'ldl', 'bmi']]
+
+# +---------+-----------------+--------+---------+-----+------+-----+
+# |patientid|dateofobservation|systolic|diastolic|  hdl|   ldl|  bmi|
+# +---------+-----------------+--------+---------+-----+------+-----+
+# |        4|       2011-12-17|  105.10|    77.10|71.00| 86.50|57.70|
+
 # observations_and_condition_df.show(5)
 
 # ### Filter the observations for diabetics to remove those taken before diagnosis
@@ -339,10 +350,7 @@ observations_and_condition_df["diabetic"] = \
 # )
 
 # 3rd trial
-oac_original = observations_and_condition_df
-
-observations_and_condition_df = \
-    observations_and_condition_df[
+observations_and_condition_df = observations_and_condition_df[
     (observations_and_condition_df["diabetic"] == 0) |
     (observations_and_condition_df["dateofobservation"] >=
     observations_and_condition_df["start"])]
