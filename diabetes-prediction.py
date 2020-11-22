@@ -91,7 +91,7 @@ if (z_OS_server):
     # Let's collect the observations that may be of interest in making a diabetes prediction.
     # First, select systolic blood pressure readings from the observations.  These have code 8480-6.
 
-    # In[ ]:
+
 
 
     from pyspark.sql.functions import col
@@ -113,7 +113,7 @@ if (z_OS_server):
     # * Select LDL cholesterol readings (code 18262-6).
     # * Select BMI (body mass index) readings (code 39156-5).
 
-    # In[ ]:
+
 
 
     diastolic_observations_df = (
@@ -143,7 +143,7 @@ if (z_OS_server):
 
     # ### Join the observations for each patient by date into one dataframe
 
-    # In[ ]:
+
 
 
     merged_observations_df = (
@@ -163,7 +163,7 @@ if (z_OS_server):
     #
     # Load the patients' birth dates from the database into a dataframe.
 
-    # In[ ]:
+
 
 
     patients_df = load_data_from_database("PATIENT").select("patientid", "dateofbirth")
@@ -173,7 +173,7 @@ if (z_OS_server):
 
     # Add a column containing the patient's age to the merged observations.
 
-    # In[ ]:
+
 
 
     from pyspark.sql.functions import datediff
@@ -193,7 +193,7 @@ if (z_OS_server):
     # Load the patient conditions table and select the patients that have been diagnosed with type 2 diabetes.
     # Keep the date they were diagnosed ("start" column).
 
-    # In[ ]:
+
 
 
     diabetics_df = (
@@ -212,7 +212,7 @@ if (z_OS_server):
     # Create a new column with a binary value, 1=diabetic, 0=non-diabetic.
     # This will be the label for the model (the value it is trying to predict).
 
-    # In[ ]:
+
 
 
     from pyspark.sql.functions import when
@@ -309,6 +309,8 @@ observations_and_condition_df["diabetic"] = \
     [round(i) for i in np.random.uniform(low=0, high=1,
     size=upperBound)]
 
+# observations_and_condition_df = \
+#     observations_and_condition_df.set_index('patientid')
 oac_original = observations_and_condition_df
 merged_observations_df = observations_and_condition_df[[
     'patientid', 'dateofobservation', 'systolic', 'diastolic', 'hdl',
@@ -331,7 +333,7 @@ merged_observations_df = observations_and_condition_df[[
 # won't be any different from a non-diabetic patient.
 # Therefore we want only the observations at the time the patients were diabetic.
 
-# In[ ]:
+
 
 # 1st trial
 # This generate only index
@@ -355,22 +357,25 @@ observations_and_condition_df = observations_and_condition_df[
     (observations_and_condition_df["dateofobservation"] >=
     observations_and_condition_df["start"])]
 
-if (DEBUGGING):
-    pdb.set_trace()
-
 # ### Reduce the observations to a single observation per
 # patient (the earliest available observation)
+# Sort by patient ID and date of observation
+w = pd.DataFrame(observations_and_condition_df.sort_values(
+		by = ['patientid','dateofobservation'],
+		ascending = [True,True]))
 
-# In[ ]:
+# Keep the earlist date of observation
+first_observation_df = pd.DataFrame(columns=w.keys())
+for i_dx, i in enumerate(w.iloc):
+    if (i_dx == 0):
+        first_observation_df.append(i)
+    else:
+        if (i['patientid'] != i_pre['patientid']):
+            first_observation_df.append(i)
+    i_pre = i
 
-
-# Error spot
-w = Window.partitionBy(observations_and_condition_df["patientid"]).orderBy(
-    merged_observations_df["dateofobservation"].asc())
-
-first_observation_df = observations_and_condition_df.withColumn(
-    "rn", row_number().over(w)).where(col("rn") == 1).drop("rn")
-
+if (DEBUGGING):
+    pdb.set_trace()
 
 # ## Visualize data
 #
@@ -378,7 +383,7 @@ first_observation_df = observations_and_condition_df.withColumn(
 #
 # Install the pixiedust visualization tool.
 
-# In[ ]:
+
 
 
 # !pip install --upgrade pixiedust
@@ -397,7 +402,7 @@ first_observation_df = observations_and_condition_df.withColumn(
 #
 # Click Options and try replacing "ldl" and "hdl" with other attributes.
 
-# In[ ]:
+
 
 if (NOTEBOOK):
     import pixiedust
@@ -417,7 +422,7 @@ if (NOTEBOOK):
 #
 # Create a pipeline that assembles the feature columns and runs a logistic regression algorithm.  Then use the observation data to train the model.
 
-# In[ ]:
+
 
 
 from pyspark.ml.feature import VectorAssembler
@@ -436,7 +441,7 @@ pipeline = Pipeline(stages=[vectorAssembler_features, lr])
 # The larger portion (80% of the data) is used to train the model.
 # The smaller portion (20% of the data) is used to test the model.
 
-# In[ ]:
+
 
 
 split_data = first_observation_df.randomSplit([0.8, 0.2], 24)
@@ -446,7 +451,7 @@ test_data = split_data[1]
 
 # ### Train the model
 
-# In[ ]:
+
 
 
 model = pipeline.fit(train_data)
@@ -468,7 +473,7 @@ model = pipeline.fit(train_data)
 # (by default 0.5) to make a final true of false determination.  The precision/recall curve plots
 # precision and recall at various threhold values.
 
-# In[ ]:
+
 
 
 # Plot the model's precision/recall curve.
@@ -488,7 +493,7 @@ plt.show()
 
 # Let's use the model to make predictions using the test data.  We'll leave the threshold for deciding between a true or false result at the default value of 0.5.
 
-# In[ ]:
+
 
 
 predictions = model.transform(test_data)
@@ -496,7 +501,7 @@ predictions = model.transform(test_data)
 
 # Compute recall and precision for the test predictions to see how well the model does.
 
-# In[ ]:
+
 
 
 pred_and_label = predictions.select("prediction", "diabetic").toPandas()
@@ -519,7 +524,7 @@ if (DEPLOY):
     #
     # First install the client library.
 
-    # In[ ]:
+
 
 
     get_ipython().system('rm -rf $PIP_BUILD/watson-machine-learning-client')
@@ -529,7 +534,7 @@ if (DEPLOY):
     # ### Enter your Watson Machine Learning service instance credentials here
     # They can be found in the Service Credentials tab of the Watson Machine Learning service instance that you created on IBM Cloud.
 
-    # In[ ]:
+
 
 
     wml_credentials={
@@ -542,7 +547,7 @@ if (DEPLOY):
 
     # ### Publish the model to the repository using the client
 
-    # In[ ]:
+
 
 
     from watson_machine_learning_client import WatsonMachineLearningAPIClient
@@ -561,7 +566,7 @@ if (DEPLOY):
 
     # ### Deploy the model as a web service
 
-    # In[ ]:
+
 
 
     deployment_details = client.deployments.create(model_uid, 'diabetes-prediction-1 deployment')
@@ -572,7 +577,7 @@ if (DEPLOY):
 
     # ### Call the web service to make a prediction from some sample data
 
-    # In[ ]:
+
 
 
     scoring_payload = {
