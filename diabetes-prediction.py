@@ -368,10 +368,10 @@ w = pd.DataFrame(observations_and_condition_df.sort_values(
 first_observation_df = pd.DataFrame(columns=w.keys())
 for i_dx, i in enumerate(w.iloc):
     if (i_dx == 0):
-        first_observation_df.append(i)
+        first_observation_df = first_observation_df.append(i)
     else:
         if (i['patientid'] != i_pre['patientid']):
-            first_observation_df.append(i)
+            first_observation_df = first_observation_df.append(i)
     i_pre = i
 
 if (DEBUGGING):
@@ -382,12 +382,7 @@ if (DEBUGGING):
 # At this point we have collected some observations which might be relevant to making a diabetes prediction.  The next step is to look for relationships between those observations and having diabetes.  There are many tools that help visualize data to look for relationships.  One of the easiest ones to use is called Pixiedust (https://github.com/pixiedust/pixiedust).
 #
 # Install the pixiedust visualization tool.
-
-
-
-
 # !pip install --upgrade pixiedust
-
 
 # ### Use Pixiedust to visualize whether observations correlate with diabetes
 #
@@ -402,13 +397,10 @@ if (DEBUGGING):
 #
 # Click Options and try replacing "ldl" and "hdl" with other attributes.
 
-
-
 if (NOTEBOOK):
     import pixiedust
 
     display(first_observation_df)
-
 
 # ## Build and train the model
 #
@@ -421,29 +413,25 @@ if (NOTEBOOK):
 # Let's continue using HDL and systolic blood pressure as the features for the model.  In reality more features would be needed to build a usable model.
 #
 # Create a pipeline that assembles the feature columns and runs a logistic regression algorithm.  Then use the observation data to train the model.
-
-
-
-
 from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.classification import LogisticRegression
 from pyspark.ml import Pipeline
 
-vectorAssembler_features = VectorAssembler(inputCols=["hdl", "systolic"], outputCol="features")
+vectorAssembler_features = VectorAssembler(inputCols=["hdl", "systolic"],
+    outputCol="features")
 
-lr = LogisticRegression(featuresCol = 'features', labelCol = 'diabetic', maxIter=10)
+lr = LogisticRegression(featuresCol = 'features',
+    labelCol = 'diabetic', maxIter=10)
 
 pipeline = Pipeline(stages=[vectorAssembler_features, lr])
-
 
 # ### Split the observation data into two portions
 #
 # The larger portion (80% of the data) is used to train the model.
 # The smaller portion (20% of the data) is used to test the model.
 
-
-
-
+# Error spot
+# *** AttributeError: 'DataFrame' object has no attribute 'randomSplit'
 split_data = first_observation_df.randomSplit([0.8, 0.2], 24)
 train_data = split_data[0]
 test_data = split_data[1]
