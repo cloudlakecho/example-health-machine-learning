@@ -16,7 +16,7 @@
 #
 # This project is part of a series of code patterns pertaining to a fictional health care company called Example Health.  This company stores electronic health records in a database on a z/OS server.  Before running the notebook, the synthesized health records must be created and loaded into this database.  Another project, https://github.com/IBM/example-health-synthea, provides the steps for doing this.  The records are created using a tool called Synthea (https://github.com/synthetichealth/synthea), transformed and loaded into the database.
 
-import datetime, os, pdb, sys
+import argparse, datetime, os, pdb, sys
 import math, statistics
 import numpy as np
 import pandas as pd
@@ -24,10 +24,38 @@ from pyspark.sql.functions import col
 from pyspark.sql.window import Window
 from pyspark.sql.functions import row_number
 
+from pyspark.ml.feature import VectorAssembler
+from pyspark.ml.classification import LogisticRegression
+from pyspark.ml import Pipeline
+
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import make_pipeline
+from sklearn.feature_extraction import DictVectorizer
+from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LogisticRegressionCV
+
+from keras.models import Sequential
+from keras.layers.core import Dense, Activation
+from keras.utils import np_utils
+
 z_OS_server = False  # Database from z/OS server.
 NOTEBOOK = False
 
+EARLY_DEBUGGING = False
 DEBUGGING = True
+EARLY_TESTING = False
+TESTING = True
+
+TO_DO = False
+
+
+def getting_arg():
+    parser = argparse.ArgumentParser(description='Make data')
+    parser.add_argument('--in_file', dest='in_file',
+                        help='output file name')
+
+    return parser
+
 
 # ## Load and prepare the data
 
@@ -222,100 +250,26 @@ if (z_OS_server):
         .withColumn("diabetic", when(col("start").isNotNull(), 1).otherwise(0))
     )
 
-# Number of patients, and there would be multiple observation per patient
-total_patient = 5000
-no_observation = 4
-upperBound =  total_patient * no_observation
+args = getting_arg().parse_args()
 
-# To do
-#   Build DataFrame with
-#   patientid|d"ateofobservation|systolic|diastolic|  hdl|  ldl|  bmi| age|start|diabetic
-# ex)
-# +---------+-----------------+--------+---------+-----+-----+-----+-----------------+-----+--------+
-# |patientid|dateofobservation|systolic|diastolic|  hdl|  ldl|  bmi|              age|start|diabetic|
-# +---------+-----------------+--------+---------+-----+-----+-----+-----------------+-----+--------+
-# |      463|       2013-01-26|  113.40|    77.50|77.30|91.40|35.80|52.52876712328767| null|       0|
-# |      463|       2010-01-09|  113.50|    70.60|71.20|76.00|35.80|49.47945205479452| null|       0|
+if (any(vars(args).values()) == None):
+    print ("Please, give me input arguments, thanks.")
+    sys.exit(1)
+else:
+    print (vars(args))
 
-temp = ["patientid", "dateofobservation", "systolic", "diastolic", "hdl", "ldl", "bmi",
-    "age", "start", "diabetic"]
-observations_and_condition_df = pd.DataFrame(columns=temp)
+no_ep = 100
+each_b_s = 100
+# Dataset will be divided and one group size will be batch size
+total_n_group = 10
 
-id_start = 1
-id_end = id_start + total_patient
-observations_and_condition_df["patientid"] = \
-    np.random.uniform(low=id_start, high=id_end,
-    size=upperBound).astype(np.int)
-# systolic 90 ~ 120
-# diastolic 60 ~ 80
-
-# To do
-# Beta distribution, but what value would be upper limit?
-# hdl 60 milligrams per deciliter (mg/dL) of blood or higher
-
-# ldl
-# Less than 100 mg/dL	Optimal
-# 100-129 mg/dL	Near optimal/above optimal
-# 130-159 mg/dL	Borderline high
-# 160-189 mg/dL	High
-# bmi
-# Below 18.5	Underweight
-# 18.5 – 24.9	Normal or Healthy Weight
-# 25.0 – 29.9	Overweight
-# 30.0 and Above	Obese
-mean = (90 + 120) / 2
-observations_and_condition_df['systolic'] = np.random.normal(
-    mean, 0.33, size=upperBound).astype(np.int)
-mean = (60 + 80) / 2
-
-observations_and_condition_df['diastolic'] = np.random.normal(
-mean, 0.33, size=upperBound).astype(np.int)
-
-limit = 100
-observations_and_condition_df['ldl'] = np.random.poisson(
-    limit, upperBound)
-mean = (18.5 + 24.9) / 2
-observations_and_condition_df['bmi'] = np.random.normal(
-    mean, 0.33, size=upperBound).astype(np.int)
-
-# Age: Share on Pinterest The average age of onset for
-# type 2 diabetes is 45 years
-data_of_birth_early = "1958-11-29"
-data_of_birth_late = "2017-07-04"
-mean = 45
-observations_and_condition_df['age'] = np.random.normal(
-    mean, 0.33, size=upperBound).astype(np.int)
-
-# Start: Age at the time of diagnosis
-# In 2015, adults aged 45 to 64 were the most diagnosed age group for diabetes
-start_early = datetime.datetime(1994, 12, 28)
-start_late = datetime.datetime(2012, 7, 20)
-observations_and_condition_df["start"] = \
-    [i.strftime("%Y-%m-%d") for i in
-    start_early + (start_late - start_early) * \
-    np.random.uniform(low=0, high=1, size=upperBound)]
-
-
-# Date of observation
-observation_early = datetime.datetime(2009, 5, 16)
-observation_late = datetime.datetime(2019, 3, 2)
-observations_and_condition_df["dateofobservation"] = \
-    [i.strftime("%Y-%m-%d") for i in
-    observation_early + (observation_late - observation_early) * \
-    np.random.uniform(low=0, high=1, size=upperBound)]
-
-# 0: no and 1: diabetic
-observations_and_condition_df["diabetic"] = \
-    [round(i) for i in np.random.uniform(low=0, high=1,
-    size=upperBound)]
-
+observations_and_condition_df = pd.read_pickle(args.in_file)
 # observations_and_condition_df = \
 #     observations_and_condition_df.set_index('patientid')
 oac_original = observations_and_condition_df
 merged_observations_df = observations_and_condition_df[[
     'patientid', 'dateofobservation', 'systolic', 'diastolic', 'hdl',
     'ldl', 'bmi']]
-
 # +---------+-----------------+--------+---------+-----+------+-----+
 # |patientid|dateofobservation|systolic|diastolic|  hdl|   ldl|  bmi|
 # +---------+-----------------+--------+---------+-----+------+-----+
@@ -332,8 +286,6 @@ merged_observations_df = observations_and_condition_df[[
 # Prior to that the patient's observations
 # won't be any different from a non-diabetic patient.
 # Therefore we want only the observations at the time the patients were diabetic.
-
-
 
 # 1st trial
 # This generate only index
@@ -374,7 +326,7 @@ for i_dx, i in enumerate(w.iloc):
             first_observation_df = first_observation_df.append(i)
     i_pre = i
 
-if (DEBUGGING):
+if (EARLY_DEBUGGING):
     pdb.set_trace()
 
 # ## Visualize data
@@ -413,17 +365,33 @@ if (NOTEBOOK):
 # Let's continue using HDL and systolic blood pressure as the features for the model.  In reality more features would be needed to build a usable model.
 #
 # Create a pipeline that assembles the feature columns and runs a logistic regression algorithm.  Then use the observation data to train the model.
-from pyspark.ml.feature import VectorAssembler
-from pyspark.ml.classification import LogisticRegression
-from pyspark.ml import Pipeline
 
-vectorAssembler_features = VectorAssembler(inputCols=["hdl", "systolic"],
-    outputCol="features")
+# vectorAssembler_features = VectorAssembler(inputCols=["hdl", "systolic"],
+#     outputCol="features")
+#
+# lr = LogisticRegression(featuresCol = 'features',
+#     labelCol = 'diabetic', maxIter=10)
+#
+# pipeline = Pipeline(stages=[vectorAssembler_features, lr])
 
-lr = LogisticRegression(featuresCol = 'features',
-    labelCol = 'diabetic', maxIter=10)
+# DataFrame --> Numpy Array
+#  hdl  systolic  diabetic
+# 0   79       105         1
+# 1   79       105         0
+# 2   80       105         1
+# 3   79       104         1
+# 4   79       105         0
+#
+# array([[  1.,  79., 105.],
+#        [  0.,  79., 105.],
+#        [  1.,  80., 105.],
+#        [  1.,  79., 104.],
+#        [  0.,  79., 105.]])
 
-pipeline = Pipeline(stages=[vectorAssembler_features, lr])
+vectorizer = DictVectorizer(sparse=False)
+first_observation_dict = \
+    first_observation_df[["hdl", "systolic", "diabetic"]].to_dict('records')
+x_y = vectorizer.fit_transform(first_observation_dict)
 
 # ### Split the observation data into two portions
 #
@@ -432,18 +400,75 @@ pipeline = Pipeline(stages=[vectorAssembler_features, lr])
 
 # Error spot
 # *** AttributeError: 'DataFrame' object has no attribute 'randomSplit'
-split_data = first_observation_df.randomSplit([0.8, 0.2], 24)
-train_data = split_data[0]
-test_data = split_data[1]
+# split_data = first_observation_df.randomSplit([0.8, 0.2], 24)
+# train_data = split_data[0]
+# test_data = split_data[1]
 
+# ''' 80% and 20% '''
+train_x, test_x, train_y, test_y = train_test_split(x_y[:, 1:], x_y[:, 0],
+    train_size=0.8, test_size=0.2, random_state=0)
+
+unique = list(set(train_y))
+train_y_number = []
+for i in train_y:
+    train_y_number.append(unique.index(i))
+unique = list(set(test_y))
+test_y_number = []
+for i in test_y:
+    test_y_number.append(unique.index(i))
+
+# (1) Linear regression
+lr_1 = LinearRegression()
+lr_1.fit(train_x, train_y_number)  # x needs to be 2d for LinearRegression
+print("Accuracy = {:.2f}".format(lr_1.score(test_x, test_y_number)))
+
+# (2) Logistic regression
+lr = LogisticRegressionCV()
+lr.fit(train_x, train_y)
+
+print("Accuracy = {:.2f}".format(lr.score(test_x, test_y)))
+
+# (3) Neural Network
+# ''' Keras with one hidden layer and 16 units '''
+def one_hot_encode_object_array(arr):
+    uniques, ids = np.unique(arr, return_inverse=True)
+    return np_utils.to_categorical(ids, len(uniques))
+
+train_y_ohe = one_hot_encode_object_array(train_y)
+test_y_ohe = one_hot_encode_object_array(test_y)
+
+if (DEBUGGING):
+    pdb.set_trace()
+
+model = Sequential()
+model.add(Dense(16, input_shape=(2,)))
+model.add(Activation('sigmoid'))
+model.add(Dense(2))
+model.add(Activation('softmax'))
+
+model.compile(optimizer='adam', loss='binary_crossentropy',
+    metrics=["accuracy"])
+
+# Error
+# sparse_categorical_crossentropy
+# tensorflow.python.framework.errors_impl.InvalidArgumentError:  logits and labels must have the same first dimension, got logits shape [393,2] and labels shape [786]
+# "sparse_categorical_crossentropy", 'categorical_crossentropy'
+
+each_b_s = int(train_y_ohe.shape[0] / total_n_group)
+
+if (TESTING):
+    print ("Dataset size: {}, batch size: {}, total epoch: {}".format(
+    train_y_ohe.shape[0], each_b_s, no_ep
+    ))
+model.fit(train_x, train_y_ohe, epochs=no_ep, batch_size=each_b_s, verbose=0);
+
+loss, accuracy = model.evaluate(test_x, test_y_ohe, verbose=0)
+print("Accuracy = {:.2f}".format(accuracy))
+
+# pdb.set_trace()
 
 # ### Train the model
-
-
-
-
-model = pipeline.fit(train_data)
-
+# model = pipeline.fit(train_data)
 
 # ## Evaluate the model
 #
@@ -462,36 +487,34 @@ model = pipeline.fit(train_data)
 # precision and recall at various threhold values.
 
 
-
-
 # Plot the model's precision/recall curve.
 
 if (NOTEBOOK):
     get_ipython().run_line_magic('matplotlib', 'inline')
 
+if (TO_DO):
+    trainingSummary = model.stages[-1].summary
 
-trainingSummary = model.stages[-1].summary
-
-pr = trainingSummary.pr.toPandas()
-plt.plot(pr['recall'],pr['precision'])
-plt.ylabel('Precision')
-plt.xlabel('Recall')
-plt.show()
+    pr = trainingSummary.pr.toPandas()
+    plt.plot(pr['recall'],pr['precision'])
+    plt.ylabel('Precision')
+    plt.xlabel('Recall')
+    plt.show()
 
 
 # Let's use the model to make predictions using the test data.  We'll leave the threshold for deciding between a true or false result at the default value of 0.5.
+# predictions = model.transform(test_data)
 
+x = test_x
+prediction = model.predict(
+    x, batch_size=None, verbose=0, steps=None, callbacks=None, max_queue_size=10,
+    workers=1, use_multiprocessing=True
+)
 
-
-
-predictions = model.transform(test_data)
-
+if (TESTING):
+    pdb.set_trace()
 
 # Compute recall and precision for the test predictions to see how well the model does.
-
-
-
-
 pred_and_label = predictions.select("prediction", "diabetic").toPandas()
 
 tp = pred_and_label[(pred_and_label.prediction == 1) & (pred_and_label.diabetic == 1)].count().tolist()[1]
@@ -504,6 +527,7 @@ print("False negatives = %s" % fn)
 
 print("Recall = %s" % (tp / (tp + fn)))
 print("Precision = %s" % (tp / (tp + fp)))
+
 
 if (DEPLOY):
     # ## Publish and deploy the model
