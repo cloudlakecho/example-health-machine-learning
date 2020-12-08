@@ -511,15 +511,26 @@ prediction = model.predict(
     workers=1, use_multiprocessing=True
 )
 
+
 if (TESTING):
     pdb.set_trace()
 
 # Compute recall and precision for the test predictions to see how well the model does.
-pred_and_label = predictions.select("prediction", "diabetic").toPandas()
+tp, fp, fn = 0, 0, 0
+# 1 is diabetic in test label
+# Precition probability of non diabetic and probabilit of diabetic
+for i_dx, i in enumerate(prediction):
+    if (i[0] > i[1]):
+        cur_pred = 0
+    else:
+        cur_pred = 1
 
-tp = pred_and_label[(pred_and_label.prediction == 1) & (pred_and_label.diabetic == 1)].count().tolist()[1]
-fp = pred_and_label[(pred_and_label.prediction == 1) & (pred_and_label.diabetic == 0)].count().tolist()[1]
-fn = pred_and_label[(pred_and_label.prediction == 0) & (pred_and_label.diabetic == 1)].count().tolist()[1]
+    if (cur_pred == 1 and test_y[i_dx]) == 1:
+        tp += 1
+    elif (cur_pred == 1 and test_y[i_dx]) == 0:
+        fp += 1
+    elif (cur_pred == 0 and test_y[i_dx]) == 1:
+        fn += 1
 
 print("True positives  = %s" % tp)
 print("False positives = %s" % fp)
