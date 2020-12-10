@@ -6,11 +6,10 @@
 # This notebook explores how to train a machine learning model to predict type 2 diabetes using synthesized patient health records.  The use of synthesized data allows us to learn about building a model without any concern about the privacy issues surrounding the use of real patient health records.
 #
 # To do
-#   Abandon
-#   Modify load_data_from_database function
-#       Original method not used due to hardware limit
+#   None
 
 # Error
+#   None
 
 # ## Prerequisites
 #
@@ -63,8 +62,7 @@ def getting_arg():
 # The database must be set up by following the instructions in https://github.com/IBM/example-health-synthea.
 
 # In[1]:
-
-
+# This is needed when this code deployed in IBM Cloud
 credentials_1 = {
   'host':'xxx.yyy.com',
   'port':'nnnn',
@@ -74,181 +72,11 @@ credentials_1 = {
   'schema':'SMHEALTH'
 }
 
-
 # ### Define a function to load data from a database table into a Spark dataframe
 #
 # The partitionColumn, lowerBound, upperBound, and numPartitions options are used to load the data more quickly
 # using multiple JDBC connections.  The data is partitioned by patient id.  It is assumed that there are approximately
 # 5000 patients in the database.  If there are more or less patients, adjust the upperBound value appropriately.
-
-# In[2]:
-
-
-def load_data_from_database(table_name):
-    return (
-        spark.read.format("jdbc").options(
-            driver = "com.ibm.db2.jcc.DB2Driver",
-            url = "jdbc:db2://" + credentials_1["host"] + ":" + credentials_1["port"] + "/" + credentials_1["database"],
-            user = credentials_1["username"],
-            password = credentials_1["password"],
-            dbtable = credentials_1["schema"] + "." + table_name,
-            partitionColumn = "patientid",
-            lowerBound = 1,
-            upperBound = 5000,
-            numPartitions = 10
-        ).load()
-    )
-
-
-
-# ### Read patient observations from the database
-if (z_OS_server):
-    #
-    # The observations include things like blood pressure and cholesterol readings which are potential features for our model.
-
-    # In[3]:
-
-
-    observations_df = load_data_from_database("OBSERVATIONS")
-
-    observations_df.show(5)
-
-
-    # ### The observations table has a generalized format with a separate row per observation
-    #
-    # Let's collect the observations that may be of interest in making a diabetes prediction.
-    # First, select systolic blood pressure readings from the observations.  These have code 8480-6.
-
-
-
-
-    from pyspark.sql.functions import col
-
-    systolic_observations_df = (
-        observations_df.select("patientid", "dateofobservation", "numericvalue")
-                       .withColumnRenamed("numericvalue", "systolic")
-                       .filter((col("code") == "8480-6"))
-      )
-
-
-    systolic_observations_df.show(5)
-
-
-    # ### Select other observations of potential interest
-    #
-    # * Select diastolic blood pressure readings (code 8462-4).
-    # * Select HDL cholesterol readings (code 2085-9).
-    # * Select LDL cholesterol readings (code 18262-6).
-    # * Select BMI (body mass index) readings (code 39156-5).
-
-
-
-
-    diastolic_observations_df = (
-        observations_df.select("patientid", "dateofobservation", "numericvalue")
-                       .withColumnRenamed('numericvalue', 'diastolic')
-                       .filter((col("code") == "8462-4"))
-        )
-
-    hdl_observations_df = (
-        observations_df.select("patientid", "dateofobservation", "numericvalue")
-                       .withColumnRenamed('numericvalue', 'hdl')
-                       .filter((col("code") == "2085-9"))
-        )
-
-    ldl_observations_df = (
-        observations_df.select("patientid", "dateofobservation", "numericvalue")
-                       .withColumnRenamed('numericvalue', 'ldl')
-                       .filter((col("code") == "18262-6"))
-        )
-
-    bmi_observations_df = (
-        observations_df.select("patientid", "dateofobservation", "numericvalue")
-                       .withColumnRenamed('numericvalue', 'bmi')
-                       .filter((col("code") == "39156-5"))
-        )
-
-
-    # ### Join the observations for each patient by date into one dataframe
-
-
-
-
-    merged_observations_df = (
-        systolic_observations_df.join(diastolic_observations_df, ["patientid", "dateofobservation"])
-                                .join(hdl_observations_df, ["patientid", "dateofobservation"])
-                                .join(ldl_observations_df, ["patientid", "dateofobservation"])
-                                .join(bmi_observations_df, ["patientid", "dateofobservation"])
-    )
-
-    # +---------+-----------------+--------+---------+-----+------+-----+
-    # |patientid|dateofobservation|systolic|diastolic|  hdl|   ldl|  bmi|
-    # +---------+-----------------+--------+---------+-----+------+-----+
-    # |        4|       2011-12-17|  105.10|    77.10|71.00| 86.50|57.70|
-    merged_observations_df.show(5)
-
-    # ### Another possible feature is the patient's age at the time of observation
-    #
-    # Load the patients' birth dates from the database into a dataframe.
-
-
-
-
-    patients_df = load_data_from_database("PATIENT").select("patientid", "dateofbirth")
-
-    patients_df.show(5)
-
-
-    # Add a column containing the patient's age to the merged observations.
-
-
-
-
-    from pyspark.sql.functions import datediff
-
-    merged_observations_with_age_df = (
-      merged_observations_df.join(patients_df, "patientid")
-                            .withColumn("age", datediff(col("dateofobservation"), col("dateofbirth"))/365)
-                            .drop("dateofbirth")
-      )
-
-    merged_observations_with_age_df.show(5)
-
-
-    # ### Find the patients that have been diagnosed with type 2 diabetes
-    #
-    # The conditions table contains the conditions that patients have and the date they were diagnosed.
-    # Load the patient conditions table and select the patients that have been diagnosed with type 2 diabetes.
-    # Keep the date they were diagnosed ("start" column).
-
-
-
-
-    diabetics_df = (
-        load_data_from_database("CONDITIONS")
-        .select("patientid", "start")
-        .filter(col("description") == "Diabetes")
-    )
-
-    diabetics_df.show(5)
-
-
-    # ### Create a "diabetic" column which is the "label" for the model to predict
-    #
-    # Join the merged observations with the diabetic patients.
-    # This is a left join so that we keep all observations for both diabetic and non-diabetic patients.
-    # Create a new column with a binary value, 1=diabetic, 0=non-diabetic.
-    # This will be the label for the model (the value it is trying to predict).
-
-
-
-
-    from pyspark.sql.functions import when
-
-    observations_and_condition_df = (
-        merged_observations_with_age_df.join(diabetics_df, "patientid", "left_outer")
-        .withColumn("diabetic", when(col("start").isNotNull(), 1).otherwise(0))
-    )
 
 args = getting_arg().parse_args()
 
@@ -486,7 +314,6 @@ print("Accuracy = {:.2f}".format(accuracy))
 # (by default 0.5) to make a final true of false determination.  The precision/recall curve plots
 # precision and recall at various threhold values.
 
-
 # Plot the model's precision/recall curve.
 
 if (NOTEBOOK):
@@ -501,7 +328,6 @@ if (TO_DO):
     plt.xlabel('Recall')
     plt.show()
 
-
 # Let's use the model to make predictions using the test data.  We'll leave the threshold for deciding between a true or false result at the default value of 0.5.
 # predictions = model.transform(test_data)
 
@@ -510,7 +336,6 @@ prediction = model.predict(
     x, batch_size=None, verbose=0, steps=None, callbacks=None, max_queue_size=10,
     workers=1, use_multiprocessing=True
 )
-
 
 if (TESTING):
     pdb.set_trace()
@@ -548,17 +373,13 @@ if (DEPLOY):
     # First install the client library.
 
 
-
-
     get_ipython().system('rm -rf $PIP_BUILD/watson-machine-learning-client')
     get_ipython().system('pip install watson-machine-learning-client --upgrade')
 
 
     # ### Enter your Watson Machine Learning service instance credentials here
-    # They can be found in the Service Credentials tab of the Watson Machine Learning service instance that you created on IBM Cloud.
-
-
-
+    # They can be found in the Service Credentials tab of
+    # the Watson Machine Learning service instance that you created on IBM Cloud.
 
     wml_credentials={
       "url": "https://xxx.ibm.com",
@@ -567,11 +388,7 @@ if (DEPLOY):
       "instance_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
     }
 
-
     # ### Publish the model to the repository using the client
-
-
-
 
     from watson_machine_learning_client import WatsonMachineLearningAPIClient
 
@@ -586,22 +403,14 @@ if (DEPLOY):
     model_uid            = client.repository.get_model_uid( stored_model_details )
     print( "model_uid: ", model_uid )
 
-
     # ### Deploy the model as a web service
-
-
-
 
     deployment_details = client.deployments.create(model_uid, 'diabetes-prediction-1 deployment')
 
     scoring_endpoint = client.deployments.get_scoring_url(deployment_details)
     print(scoring_endpoint)
 
-
     # ### Call the web service to make a prediction from some sample data
-
-
-
 
     scoring_payload = {
         "fields": ["hdl", "systolic"],
