@@ -39,22 +39,14 @@ from keras.utils import np_utils
 
 z_OS_server = False  # Database from z/OS server.
 NOTEBOOK = False
+DEPLOY = False
 
 EARLY_DEBUGGING = False
-DEBUGGING = True
+DEBUGGING = False
 EARLY_TESTING = False
 TESTING = True
 
 TO_DO = False
-
-
-def getting_arg():
-    parser = argparse.ArgumentParser(description='Make data')
-    parser.add_argument('--in_file', dest='in_file',
-                        help='output file name')
-
-    return parser
-
 
 # ## Load and prepare the data
 
@@ -78,20 +70,18 @@ credentials_1 = {
 # using multiple JDBC connections.  The data is partitioned by patient id.  It is assumed that there are approximately
 # 5000 patients in the database.  If there are more or less patients, adjust the upperBound value appropriately.
 
-args = getting_arg().parse_args()
-
-if (any(vars(args).values()) == None):
-    print ("Please, give me input arguments, thanks.")
-    sys.exit(1)
-else:
-    print (vars(args))
+# Input argument
+# Instead of command argument, Jupyter Notebook
+given_arg = {
+    'in_file': "record.pkl"
+}
 
 no_ep = 100
 each_b_s = 100
 # Dataset will be divided and one group size will be batch size
 total_n_group = 10
 
-observations_and_condition_df = pd.read_pickle(args.in_file)
+observations_and_condition_df = pd.read_pickle(given_arg['in_file'])
 # observations_and_condition_df = \
 #     observations_and_condition_df.set_index('patientid')
 oac_original = observations_and_condition_df
@@ -248,13 +238,15 @@ for i in test_y:
 # (1) Linear regression
 lr_1 = LinearRegression()
 lr_1.fit(train_x, train_y_number)  # x needs to be 2d for LinearRegression
-print("Accuracy = {:.2f}".format(lr_1.score(test_x, test_y_number)))
+print ("Linear Regression")
+print ("Accuracy = {:.2f}".format(lr_1.score(test_x, test_y_number)))
 
 # (2) Logistic regression
 lr = LogisticRegressionCV()
 lr.fit(train_x, train_y)
 
-print("Accuracy = {:.2f}".format(lr.score(test_x, test_y)))
+print ("Logistic Regression")
+print ("Accuracy = {:.2f}".format(lr.score(test_x, test_y)))
 
 # (3) Neural Network
 # ''' Keras with one hidden layer and 16 units '''
@@ -291,7 +283,8 @@ if (TESTING):
 model.fit(train_x, train_y_ohe, epochs=no_ep, batch_size=each_b_s, verbose=0);
 
 loss, accuracy = model.evaluate(test_x, test_y_ohe, verbose=0)
-print("Accuracy = {:.2f}".format(accuracy))
+print ("Neural Network")
+print ("Accuracy = {:.2f}".format(accuracy))
 
 # pdb.set_trace()
 
@@ -357,22 +350,22 @@ for i_dx, i in enumerate(prediction):
     elif (cur_pred == 0 and test_y[i_dx]) == 1:
         fn += 1
 
-print("True positives  = %s" % tp)
-print("False positives = %s" % fp)
-print("False negatives = %s" % fn)
+print ("True positives  = %s" % tp)
+print ("False positives = %s" % fp)
+print ("False negatives = %s" % fn)
 
-print("Recall = %s" % (tp / (tp + fn)))
-print("Precision = %s" % (tp / (tp + fp)))
+if (tp + fn != 0):
+    print ("Recall = %s" % (tp / (tp + fn)))
+if (tp + fp != 0):
+    print ("Precision = %s" % (tp / (tp + fp)))
 
 
+# ## Publish and deploy the model
+#
+# In this section you will learn how to store the model in the Watson Machine Learning repository by using the repository client.
+#
+# First, please install the client library.
 if (DEPLOY):
-    # ## Publish and deploy the model
-    #
-    # In this section you will learn how to store the model in the Watson Machine Learning repository by using the repository client.
-    #
-    # First install the client library.
-
-
     get_ipython().system('rm -rf $PIP_BUILD/watson-machine-learning-client')
     get_ipython().system('pip install watson-machine-learning-client --upgrade')
 
