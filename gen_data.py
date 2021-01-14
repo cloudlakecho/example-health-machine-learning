@@ -2,29 +2,36 @@
 # Cloud Cho,  November 27, 2020
 
 
-import argparse, os, pdb, sys
+# To do
+#   Is Drop function in Pandas keep Index? 
+
+
+# Reference:
+#   Data: https://www.kaggle.com/cdc/national-health-and-nutrition-examination-survey
+#   Data processing: https://www.kaggle.com/what0919/diabetes-prediction
+
+import argparse, glob
+import os, pdb, sys
 import datetime
 import numpy as np
 import pandas as pd
+from sklearn.feature_selection import VarianceThreshold
 
 
 def getting_arg():
     parser = argparse.ArgumentParser(description='Make data')
+    parser.add_argument('--in_file', dest='in_file',
+                    help='input file name')
+    parser.add_argument('--in_folder', dest='in_folder',
+                help='input folder name')
     parser.add_argument('--out_file', dest='out_file',
                         help='output file name')
+    parser.add_argument('--choice', dest='choice', type=int,
+                    help='data type choice')
 
     return parser
 
-
-def main():
-    args = getting_arg().parse_args()
-
-    if (any(vars(args).values()) == None):
-        print ("Please, give me input arguments, thanks.")
-        sys.exit(1)
-    else:
-        print (vars(args))
-
+def synthesized(out_file):
     # Number of patients, and there would be multiple observation per patient
     total_patient = 5000
     no_observation = 4
@@ -128,12 +135,66 @@ def main():
         size=upperBound)]
 
     try:
-        observations_and_condition_df.to_pickle(args.out_file)
+        observations_and_condition_df.to_pickle(out_file)
     except Exception as e:
         print (e.args)
         sys.exit(1)
     else:
-        print ("{} saved.".format(args.out_file))
+        print ("{} saved.".format(out_file))
+
+
+# Dataset Merge & select attribute
+def nhanes(input_files):
+    for i_dx, i in enumerate(input_files):
+        df = pd.read_csv(i)
+        if (i_dx == 0):
+            df_all = df
+        else:
+            df.drop(['SEQN'], axis = 1, inplace=True)
+            df_all = pd.concat([df_all, df], axis=1, join='inner')
+
+    #sel = VarianceThreshold(threshold=(.8 * (1 - .8)))
+
+    #sel.fit_transform(df)
+
+    df.describe()
+
+    # NA handling, Feature selection
+    df.dropna(axis=1, how='all')
+    df.dropna(axis=0, how='all')
+    df = df.rename(columns = {'SEQN' : 'ID',
+                              'RIAGENDR' : 'Gender',
+                              'DMDYRSUS' : 'Years_in_US', # Nan -> american i guess
+                              'INDFMPIR' : 'Family_income',
+                              'LBXGH' : 'GlycoHemoglobin',
+                              'BMXARMC' : 'ArmCircum',
+                              'BMDAVSAD' : 'SaggitalAbdominal',
+                              'MGDCGSZ' : 'GripStrength',
+                              'DRABF' : 'Breast_fed'})
+
+    df = df.loc[:, ['ID', 'Gender', 'Years_in_US', 'Family_income','GlycoHemoglobin', 'ArmCircum',
+                    'SaggitalAbdominal', 'GripStrength', 'Breast_fed']]
+
+    df.describe()
+
+
+# ===== ===== ===== ===== ===== ===== ===== ===== ===== ===== ===== ===== =====
+def main():
+    args = getting_arg().parse_args()
+
+    if (any(vars(args).values()) == None):
+        print ("Please, give me input arguments, thanks.")
+        sys.exit(1)
+    else:
+        print (vars(args))
+
+    if (args.choice == 1):
+        syn(args.out_file)
+    elif (args.choice == 2):
+        input_files = list()
+        for i in glob.glob(args.in_folder):
+            input_files.append(i)
+        nhanes(input_files)
 
 
 if __name__ == "__main__":
