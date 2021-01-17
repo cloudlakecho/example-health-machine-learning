@@ -3,7 +3,7 @@
 
 
 # To do
-#   Is Drop function in Pandas keep Index? 
+#   Is Drop function in Pandas keep Index?
 
 
 # Reference:
@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 from sklearn.feature_selection import VarianceThreshold
 
+RENAME = False
 
 def getting_arg():
     parser = argparse.ArgumentParser(description='Make data')
@@ -144,25 +145,36 @@ def synthesized(out_file):
 
 
 # Dataset Merge & select attribute
-def nhanes(input_files):
+def nhanes(input_files, out_file):
+
     for i_dx, i in enumerate(input_files):
-        df = pd.read_csv(i)
+        try:
+            df = pd.read_csv(i)
+        except Exception as e:
+            print (e.args)
+            try:
+                df = pd.read_csv(i, encoding= 'unicode_escape')
+            except Exception as e:
+                print (e.args)
+                sys.exit(1)
+        df.set_index('SEQN', inplace=True)  # SEQN is ID.
         if (i_dx == 0):
             df_all = df
         else:
-            df.drop(['SEQN'], axis = 1, inplace=True)
-            df_all = pd.concat([df_all, df], axis=1, join='inner')
+            df_all = df_all.join(df, how="outer")  # Combine by ID
 
     #sel = VarianceThreshold(threshold=(.8 * (1 - .8)))
 
     #sel.fit_transform(df)
 
-    df.describe()
+    # df_all.describe()
 
     # NA handling, Feature selection
-    df.dropna(axis=1, how='all')
-    df.dropna(axis=0, how='all')
-    df = df.rename(columns = {'SEQN' : 'ID',
+    # df.dropna(axis=1, how='all')
+    # df.dropna(axis=0, how='all')
+
+    if (RENAME):
+        df_all = df_all.rename(columns = {'SEQN' : 'ID',
                               'RIAGENDR' : 'Gender',
                               'DMDYRSUS' : 'Years_in_US', # Nan -> american i guess
                               'INDFMPIR' : 'Family_income',
@@ -172,10 +184,22 @@ def nhanes(input_files):
                               'MGDCGSZ' : 'GripStrength',
                               'DRABF' : 'Breast_fed'})
 
-    df = df.loc[:, ['ID', 'Gender', 'Years_in_US', 'Family_income','GlycoHemoglobin', 'ArmCircum',
+        df_all = df_all.loc[:, ['ID', 'Gender', 'Years_in_US', 'Family_income','GlycoHemoglobin', 'ArmCircum',
                     'SaggitalAbdominal', 'GripStrength', 'Breast_fed']]
 
-    df.describe()
+    # df_all.describe()
+
+    # pdb.set_trace()
+
+    observations_and_condition_df = df_all
+
+    try:
+        observations_and_condition_df.to_pickle(out_file)
+    except Exception as e:
+        print (e.args)
+        sys.exit(1)
+    else:
+        print ("{} saved.".format(out_file))
 
 
 # ===== ===== ===== ===== ===== ===== ===== ===== ===== ===== ===== ===== =====
@@ -192,9 +216,12 @@ def main():
         syn(args.out_file)
     elif (args.choice == 2):
         input_files = list()
-        for i in glob.glob(args.in_folder):
+        for i in glob.glob(os.path.join(args.in_folder, '*.csv')):
             input_files.append(i)
-        nhanes(input_files)
+        if (len(input_files) == 0) or (args.out_file == None):
+            print("Please, check input parameters, thanks.")
+        else:
+            nhanes(input_files, args.out_file)
 
 
 if __name__ == "__main__":
