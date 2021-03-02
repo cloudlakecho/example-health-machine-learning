@@ -6,7 +6,7 @@
 # This notebook explores how to train a machine learning model to predict type 2 diabetes using synthesized patient health records.  The use of synthesized data allows us to learn about building a model without any concern about the privacy issues surrounding the use of real patient health records.
 #
 # To do
-#   None
+#   Check input tensor shape
 
 # Error
 #   None
@@ -14,6 +14,11 @@
 # ## Prerequisites
 #
 # This project is part of a series of code patterns pertaining to a fictional health care company called Example Health.  This company stores electronic health records in a database on a z/OS server.  Before running the notebook, the synthesized health records must be created and loaded into this database.  Another project, https://github.com/IBM/example-health-synthea, provides the steps for doing this.  The records are created using a tool called Synthea (https://github.com/synthetichealth/synthea), transformed and loaded into the database.
+
+# Reference:
+#   Shallow neural network model
+#       https://stackoverflow.com/q/43237124/5595995
+#       https://stackoverflow.com/a/43237727/5595995
 
 import argparse, datetime, os, pdb, sys
 import math, statistics
@@ -47,6 +52,7 @@ EARLY_TESTING = False
 TESTING = True
 
 TO_DO = False
+MODEL = 2  # Neural network model
 
 # ## Load and prepare the data
 
@@ -260,14 +266,34 @@ test_y_ohe = one_hot_encode_object_array(test_y)
 if (DEBUGGING):
     pdb.set_trace()
 
-model = Sequential()
-model.add(Dense(16, input_shape=(2,)))
-model.add(Activation('sigmoid'))
-model.add(Dense(2))
-model.add(Activation('softmax'))
+if (MODEL == 1):
+    model = Sequential()
+    model.add(Dense(16, input_shape=(2,)))
+    model.add(Activation('sigmoid'))
+    model.add(Dense(2))
+    model.add(Activation('softmax'))
 
-model.compile(optimizer='adam', loss='binary_crossentropy',
-    metrics=["accuracy"])
+    model.compile(optimizer='adam', loss='binary_crossentropy',
+        metrics=["accuracy"])
+elif (MODEL == 2):
+    model = Sequential()
+    model.add(Dense(16, input_shape=(3, 2)))
+    model.add(Activation('relu'))
+    model.add(Flatten())
+    model.add(Dense(4))
+
+    model.compile(loss='mean_squared_error', optimizer='SGD')
+elif (MODEL == 3):
+    model = Sequential()
+    model.add(Flatten(input_shape=(3, 2)))
+    model.add(Dense(16))
+    model.add(Activation('relu'))
+    model.add(Dense(4))
+
+    model.compile(loss='mean_squared_error', optimizer='SGD')
+else:
+    print ("Please, choose neural network model.")
+    sys.exit(1)
 
 # Error
 # sparse_categorical_crossentropy
